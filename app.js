@@ -126,7 +126,7 @@
       rowEl.style.marginBottom = '6px';
 
       if (i === 2) {
-        // Enter button before the row
+        // Enter before letters
         const enter = document.createElement('button');
         enter.textContent = 'Enter';
         enter.className = 'key wide';
@@ -266,7 +266,12 @@
   }
 
   // Event bindings
-  document.addEventListener('keydown', e => handleKey(e.key.toUpperCase()));
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === 'Backspace' || /^[a-zA-Z]$/.test(e.key)) {
+      handleKey(e.key === 'Enter' || e.key === 'Backspace' ? e.key : e.key.toUpperCase());
+    }
+  });
+
   nextBtn.addEventListener('click', startNewRound);
   resetBtn.addEventListener('click', () => {
     if (!confirm('Reset scores and used words?')) return;
