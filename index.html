@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lingo</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="preload" href="/styles.css" as="style" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Lingo</h1>
+    <div class="controls">
+      <label>Mode
+        <select id="mode">
+          <option value="single">Single Player</option>
+          <option value="two">Two Player</option>
+        </select>
+      </label>
+      <label>Length
+        <select id="wordLength">
+          <option value="4">4</option>
+          <option value="5" selected>5</option>
+          <option value="6">6</option>
+        </select>
+      </label>
+      <label>Guesses
+        <input id="guesses" type="number" min="3" max="10" value="6" />
+      </label>
+      <label>Reveal
+        <select id="reveal">
+          <option value="first" selected>First letter</option>
+          <option value="last">Last letter</option>
+          <option value="none">None</option>
+        </select>
+      </label>
+      <button id="darkToggle" aria-label="Toggle dark mode">🌗</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="activeBanner" class="banner">Player 1’s turn</div>
+
+    <section id="grid" class="grid" aria-live="polite" aria-label="Guess grid"></section>
+
+    <div id="message" class="message" role="status" aria-live="polite"></div>
+
+    <section id="keyboard" class="keyboard" aria-label="On-screen keyboard"></section>
+
+    <section class="actions">
+      <button id="nextRound" class="primary" hidden>Next Round ▶</button>
+      <button id="resetScores" class="secondary">Reset Scores</button>
+    </section>
+
+    <section id="scoreboard" class="scoreboard" aria-label="Scoreboard">
+      <div class="card">
+        <h2>Scores</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Total Games</th>
+              <th>Wins</th>
+              <th>First-Try Wins</th>
+              <th>Steals</th>
+            </tr>
+          </thead>
+          <tbody id="scoreRows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <small>Privacy: noindex, nofollow. Edit <code>words/*.txt</code> to update word pools.</small>
+  </footer>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>
