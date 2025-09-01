@@ -13,6 +13,7 @@
   const lenSel = qs('#wordLength');
   const guessesInput = qs('#guesses');
   const revealSel = qs('#reveal');
+  const timerSel = qs('#timerSel'); // NEW timer select dropdown
   const darkToggle = qs('#darkToggle');
   const scoreRows = qs('#scoreRows');
 
@@ -30,11 +31,12 @@
     wordsByLen: { 4: [], 5: [], 6: [] },
     dict: new Set(),
     used: { 4: new Set(), 5: new Set(), 6: new Set() },
-    settings: { mode: 'single', len: 5, guesses: 6, reveal: 'first', timer: 10 },
+    settings: { mode: 'single', len: 5, guesses: 6, reveal: 'first', timer: 15 }, // default 15s
     round: {},
     stats: { p1: { total_games: 0, wins: 0, first_try_wins: 0, steals: 0 }, p2: { total_games: 0, wins: 0, first_try_wins: 0, steals: 0 } },
     timerInterval: null,
-    timeLeft: 0
+    timeLeft: 0,
+    timerRunning: false
   };
 
   const STORAGE_KEY_STATS = 'lingo_stats_v1';
@@ -119,7 +121,7 @@
     }
   }
 
-  // Keyboard
+  // Keyboard (Wordle style)
   function renderKeyboard() {
     keyboardEl.innerHTML = '';
 
@@ -136,11 +138,10 @@
       rowEl.style.gap = '6px';
       rowEl.style.marginBottom = '6px';
 
-      if (i === 1) {
-        rowEl.style.paddingLeft = '20px'; // indent 2nd row
-      }
+      if (i === 1) rowEl.style.paddingLeft = '20px';
+      if (i === 2) rowEl.style.paddingLeft = '40px';
+
       if (i === 2) {
-        rowEl.style.paddingLeft = '40px'; // indent 3rd row
         const enter = document.createElement('button');
         enter.textContent = 'Enter';
         enter.className = 'key wide';
@@ -189,6 +190,7 @@
   function startTimer() {
     clearInterval(state.timerInterval);
     state.timeLeft = state.settings.timer;
+    state.timerRunning = true;
     timerEl.style.width = '100%';
     if (!timerEl.parentNode) {
       gridEl.insertAdjacentElement('afterend', timerEl);
@@ -218,6 +220,7 @@
     state.settings.mode = modeSel.value;
     state.settings.guesses = Math.max(3, Math.min(10, parseInt(guessesInput.value, 10) || 6));
     state.settings.reveal = revealSel.value;
+    state.settings.timer = parseInt(timerSel.value, 10) || 15;
     persist();
 
     state.round = {
@@ -234,18 +237,21 @@
     messageEl.textContent = '';
     nextBtn.hidden = true;
 
-    // Reveal first letter if option is set
     if (state.settings.reveal === 'first' && state.round.secret) {
       state.round.board[0][0].textContent = state.round.secret[0];
       state.round.col = 1;
     }
 
-    startTimer();
+    state.timerRunning = false; // wait until typing starts
   }
 
   // Typing and guesses
   function handleKey(key) {
     if (state.round.stage !== 'playing') return;
+
+    // start timer on first keypress
+    if (!state.timerRunning) startTimer();
+
     const len = state.settings.len;
     const row = state.round.row;
     const col = state.round.col;
@@ -258,10 +264,10 @@
     } else if (key === 'Backspace') {
       if (state.round.col > 0) {
         state.round.col--;
-        if (!(state.settings.reveal === 'first' && row === 0 && state.round.col === 0)) {
+        if (!(state.settings.reveal === 'first' && state.round.col === 0)) {
           state.round.board[row][state.round.col].textContent = '';
         } else {
-          state.round.col = 1;
+          state.round.col = 1; // lock first letter in col 0
         }
       }
     } else if (key === 'Enter') {
@@ -311,7 +317,7 @@
       clearInterval(state.timerInterval);
       nextBtn.hidden = false;
     } else {
-      startTimer();
+      state.timerRunning = false; // restart timer when typing next row
     }
   }
 
@@ -341,6 +347,7 @@
   lenSel.addEventListener('change', startNewRound);
   guessesInput.addEventListener('change', startNewRound);
   revealSel.addEventListener('change', startNewRound);
+  timerSel.addEventListener('change', startNewRound);
 
   // Init
   loadPersisted();
@@ -348,6 +355,7 @@
   lenSel.value = String(state.settings.len);
   guessesInput.value = String(state.settings.guesses);
   revealSel.value = state.settings.reveal;
+  if (timerSel) timerSel.value = String(state.settings.timer);
   setupDarkMode();
   renderScores();
 
