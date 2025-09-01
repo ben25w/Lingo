@@ -1,6 +1,5 @@
 (() => {
   const qs = (s) => document.querySelector(s);
-  const qsa = (s) => Array.from(document.querySelectorAll(s));
 
   // Elements
   const gridEl = qs('#grid');
@@ -30,13 +29,6 @@
   const STORAGE_KEY_STATS = 'lingo_stats_v1';
   const STORAGE_KEY_USED = 'lingo_used_v1';
   const STORAGE_KEY_PREFS = 'lingo_prefs_v1';
-
-  // Utils
-  function randChoice(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
-  function setMessage(msg, isError=false) {
-    messageEl.textContent = msg;
-    messageEl.classList.toggle('error', !!isError);
-  }
 
   // Persistence
   function loadPersisted() {
@@ -72,13 +64,92 @@
     if (!pool.length) return '';
     if (state.used[len].size >= pool.length) state.used[len].clear();
     let word;
-    do { word = randChoice(pool); } while (state.used[len].has(word));
+    do { word = pool[Math.floor(Math.random() * pool.length)]; } while (state.used[len].has(word));
     return word;
   }
 
-  // Rendering (simplified for now)
-  function renderGrid() { gridEl.textContent = ''; }
-  function renderKeyboard() { keyboardEl.textContent = ''; }
+  // Grid
+  function renderGrid() {
+    gridEl.innerHTML = '';
+    const len = state.settings.len;
+    const rows = state.settings.guesses;
+
+    gridEl.style.display = 'grid';
+    gridEl.style.gap = '8px';
+    gridEl.style.justifyContent = 'center';
+
+    for (let r = 0; r < rows; r++) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.style.display = 'grid';
+      row.style.gap = '8px';
+      row.style.gridTemplateColumns = `repeat(${len}, 52px)`;
+
+      for (let c = 0; c < len; c++) {
+        const tile = document.createElement('div');
+        tile.className = 'tile';
+        tile.style.width = '52px';
+        tile.style.height = '52px';
+        tile.style.display = 'flex';
+        tile.style.alignItems = 'center';
+        tile.style.justifyContent = 'center';
+        tile.style.border = '2px solid #999';
+        tile.style.borderRadius = '8px';
+        tile.style.textTransform = 'uppercase';
+        tile.textContent = '';
+        row.appendChild(tile);
+      }
+      gridEl.appendChild(row);
+    }
+  }
+
+  // Keyboard
+  function renderKeyboard() {
+    keyboardEl.innerHTML = '';
+
+    const rows = [
+      'QWERTYUIOP',
+      'ASDFGHJKL',
+      'ZXCVBNM'
+    ];
+
+    rows.forEach((row, i) => {
+      const rowEl = document.createElement('div');
+      rowEl.style.display = 'flex';
+      rowEl.style.justifyContent = 'center';
+      rowEl.style.gap = '6px';
+      rowEl.style.marginBottom = '6px';
+
+      if (i === 2) {
+        const enter = document.createElement('button');
+        enter.textContent = 'Enter';
+        enter.className = 'key wide';
+        rowEl.appendChild(enter);
+      }
+
+      for (const ch of row) {
+        const key = document.createElement('button');
+        key.textContent = ch;
+        key.className = 'key';
+        key.style.padding = '10px';
+        key.style.border = '1px solid #999';
+        key.style.borderRadius = '6px';
+        key.style.textTransform = 'uppercase';
+        key.dataset.key = ch;
+        rowEl.appendChild(key);
+      }
+
+      if (i === 2) {
+        const back = document.createElement('button');
+        back.textContent = '⌫';
+        back.className = 'key wide';
+        rowEl.appendChild(back);
+      }
+
+      keyboardEl.appendChild(rowEl);
+    });
+  }
+
   function renderScores() {
     const r1 = state.stats.p1;
     const r2 = state.stats.p2;
@@ -89,7 +160,6 @@
     scoreRows.innerHTML = html;
   }
 
-  // Round setup
   function startNewRound() {
     const len = state.settings.len = parseInt(lenSel.value, 10);
     state.settings.mode = modeSel.value;
@@ -99,26 +169,16 @@
 
     state.round = {
       secret: pickSecret(len),
-      stage: 'playing',
-      starter: state.settings.mode==='two' && !nextBtn.hidden ? (state.round.starter===1?2:1) : 1,
-      activePlayer: 1,
-      firstTry: true,
-      stealAvailable: (state.settings.mode==='two')
+      stage: 'playing'
     };
-
-    if (!state.round.secret) {
-      setMessage('No words loaded. Check files in /words.', true);
-      return;
-    }
 
     renderGrid();
     renderKeyboard();
     renderScores();
-    setMessage('');
+    messageEl.textContent = '';
     nextBtn.hidden = true;
   }
 
-  // Dark mode toggle
   function setupDarkMode() {
     const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
     if (prefersLight) document.body.classList.add('light');
@@ -133,7 +193,7 @@
     state.used = { 4:new Set(), 5:new Set(), 6:new Set() };
     persist();
     renderScores();
-    setMessage('Scores reset');
+    messageEl.textContent = 'Scores reset';
   });
   modeSel.addEventListener('change', startNewRound);
   lenSel.addEventListener('change', startNewRound);
