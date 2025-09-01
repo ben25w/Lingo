@@ -1,529 +1,115 @@
-(function () {
-  function qs(s) { return document.querySelector(s); }
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lingo</title>
 
-  // Elements (some may be missing; we guard later)
-  var gridEl        = qs('#grid');
-  var keyboardEl    = qs('#keyboard'); // hidden
-  var messageEl     = qs('#message');
-  var nextBtn       = qs('#nextRound');
-  var resetBtn      = qs('#resetScores');
+  <!-- Privacy -->
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
-  var modeSel       = qs('#mode');          // single/two (two-player later)
-  var lenSel        = qs('#wordLength');    // 4/5/6
-  var guessesInput  = qs('#guesses');       // attempts
-  var revealSel     = qs('#reveal');        // first/last/none
-  var timerSel      = qs('#timerSel');      // optional seconds picker
-  var singlishToggle= qs('#singlishToggle');// optional checkbox
-  var darkToggle    = qs('#darkToggle');
-  var scoreRows     = qs('#scoreRows');
+  <!-- Styles -->
+  <link rel="preload" href="/styles.css" as="style" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Lingo</h1>
+    <div class="controls">
+      <label>Mode
+        <select id="mode">
+          <option value="single" selected>Single Player</option>
+          <option value="two">Two Player</option>
+        </select>
+      </label>
 
-  // Timer bar (below grid, above keyboard)
-  var timerEl = document.createElement('div');
-  timerEl.style.height    = '10px';
-  timerEl.style.background= '#4A90E2';
-  timerEl.style.margin    = '10px auto';
-  timerEl.style.transition= 'width 0.1s linear';
-  timerEl.style.maxWidth  = '320px';
-  timerEl.style.width     = '100%';
+      <label>Length
+        <select id="wordLength">
+          <option value="4">4</option>
+          <option value="5" selected>5</option>
+          <option value="6">6</option>
+        </select>
+      </label>
 
-  // State
-  var state = {
-    // English by length
-    wordsByLen: { 4: [], 5: [], 6: [] },
-    // Singlish (5 letters)
-    singlish5: [],
-    // Active dictionary (not enforced for invalid guesses now, kept for future)
-    dictCurrent: {},
+      <label>Guesses
+        <input id="guesses" type="number" min="3" max="10" value="6" />
+      </label>
 
-    used: { 4: {}, 5: {}, 6: {}, sg5: {} },
+      <label>Reveal
+        <select id="reveal">
+          <option value="first" selected>First letter</option>
+          <option value="last">Last letter</option>
+          <option value="none">None</option>
+        </select>
+      </label>
 
-    settings: {
-      mode: 'single',
-      len: 5,
-      guesses: 6,
-      reveal: 'first',     // first | last | none
-      wordSet: 'english',  // english | singlish
-      timer: 15            // seconds per row
-    },
+      <!-- NEW: Singlish toggle (forces 5-letter list from /words/SINGLISH) -->
+      <label>Singlish Mode
+        <input type="checkbox" id="singlishToggle" />
+      </label>
 
-    round: {
-      secret: '',
-      stage: 'idle', // playing | won | lost
-      row: 0,
-      col: 0,
-      board: [],
-      lockedIdx: []
-    },
+      <!-- NEW: Per-row timer selector (optional; app defaults to 15s if removed) -->
+      <label>Timer
+        <select id="timerSel">
+          <option value="10">10s</option>
+          <option value="15" selected>15s</option>
+          <option value="20">20s</option>
+          <option value="30">30s</option>
+        </select>
+      </label>
 
-    // timer
-    timerRunning: false,
-    timerInterval: null,
-    deadlineTs: 0,
+      <button id="darkToggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌗</button>
+    </div>
+  </header>
 
-    stats: {
-      p1: { total_games: 0, wins: 0, first_try_wins: 0, steals: 0 },
-      p2: { total_games: 0, wins: 0, first_try_wins: 0, steals: 0 }
-    }
-  };
+  <main>
+    <!-- Active player banner (prepped for two-player later) -->
+    <div id="activeBanner" class="banner" aria-live="polite">Player 1’s turn</div>
 
-  var STORAGE_KEY_STATS = 'lingo_stats_v1';
-  var STORAGE_KEY_USED  = 'lingo_used_v1';
-  var STORAGE_KEY_PREFS = 'lingo_prefs_v1';
+    <!-- Guess grid -->
+    <section id="grid" class="grid" aria-live="polite" aria-label="Guess grid"></section>
 
-  // -------- Persistence --------
-  function loadPersisted() {
-    try {
-      var s = JSON.parse(localStorage.getItem(STORAGE_KEY_STATS));
-      if (s) state.stats = s;
-    } catch (e) {}
-    try {
-      var u = JSON.parse(localStorage.getItem(STORAGE_KEY_USED));
-      if (u) {
-        state.used[4]  = objFromArr(u[4]  || []);
-        state.used[5]  = objFromArr(u[5]  || []);
-        state.used[6]  = objFromArr(u[6]  || []);
-        state.used.sg5 = objFromArr(u.sg5 || []);
-      }
-    } catch (e) {}
-    try {
-      var p = JSON.parse(localStorage.getItem(STORAGE_KEY_PREFS));
-      if (p) {
-        for (var k in p) state.settings[k] = p[k];
-      }
-    } catch (e) {}
-  }
-  function persist() {
-    localStorage.setItem(STORAGE_KEY_STATS, JSON.stringify(state.stats));
-    localStorage.setItem(STORAGE_KEY_USED, JSON.stringify({
-      4:   Object.keys(state.used[4]),
-      5:   Object.keys(state.used[5]),
-      6:   Object.keys(state.used[6]),
-      sg5: Object.keys(state.used.sg5)
-    }));
-    localStorage.setItem(STORAGE_KEY_PREFS, JSON.stringify(state.settings));
-  }
-  function objFromArr(arr) {
-    var o = {};
-    for (var i=0;i<arr.length;i++) o[arr[i]] = true;
-    return o;
-  }
+    <!-- Status / errors -->
+    <div id="message" class="message" role="status" aria-live="polite"></div>
 
-  // -------- Load words --------
-  function loadWords() {
-    var files = [
-      { len:4, path:'/words/words-4.txt' },
-      { len:5, path:'/words/words-5.txt' },
-      { len:6, path:'/words/words-6.txt' }
-    ];
-    var promises = files.map(function(f){
-      return fetch(f.path).then(function(r){ return r.text(); }).then(function(txt){
-        var list = txt.split(/\r?\n/).map(trim).filter(Boolean).filter(alphaOnly);
-        var up   = list.map(upper).filter(function(w){ return w.length===f.len; });
-        state.wordsByLen[f.len] = up;
-      }).catch(function(){ /* ignore */ });
-    });
+    <!-- On-screen keyboard (JS currently hides this; physical keyboard only) -->
+    <section id="keyboard" class="keyboard" aria-label="On-screen keyboard"></section>
 
-    // Singlish (5 letters)
-    var pSing = fetch('/words/SINGLISH').then(function(r){
-      if (!r.ok) return '';
-      return r.text();
-    }).then(function(txt){
-      if (!txt) return;
-      var list = txt.split(/\r?\n/).map(trim).filter(Boolean).filter(alphaOnly);
-      state.singlish5 = list.map(upper).filter(function(w){ return w.length===5; });
-    }).catch(function(){ /* ignore */ });
+    <!-- Actions -->
+    <section class="actions">
+      <button id="nextRound" class="primary" hidden>Next Round ▶</button>
+      <button id="resetScores" class="secondary">Reset Scores</button>
+    </section>
 
-    return Promise.all(promises.concat([pSing]));
-  }
+    <!-- Scores (for now, single-player shown; two-player coming next) -->
+    <section id="scoreboard" class="scoreboard" aria-label="Scoreboard">
+      <div class="card">
+        <h2>Scores</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Total Games</th>
+              <th>Wins</th>
+              <th>First-Try Wins</th>
+              <th>Steals</th>
+            </tr>
+          </thead>
+          <tbody id="scoreRows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
 
-  function trim(s){ return s.trim(); }
-  function alphaOnly(s){ return /^[A-Za-z]+$/.test(s); }
-  function upper(s){ return s.toUpperCase(); }
+  <footer class="foot">
+    <small>Privacy: noindex, nofollow. Edit <code>words/*.txt</code> and <code>/words/SINGLISH</code> to update word pools.</small>
+  </footer>
 
-  // -------- Pools / secret --------
-  function pickSecret(wordSet, len) {
-    var pool, usedMap;
-    if (wordSet === 'singlish') {
-      pool   = state.singlish5;
-      usedMap= state.used.sg5;
-    } else {
-      pool   = state.wordsByLen[len] || [];
-      usedMap= state.used[len];
-    }
-    if (!pool || pool.length === 0) return '';
-    if (Object.keys(usedMap).length >= pool.length) {
-      // reset repeats
-      state.used.sg5 = wordSet==='singlish' ? {} : state.used.sg5;
-      if (wordSet !== 'singlish') state.used[len] = {};
-      usedMap = (wordSet==='singlish') ? state.used.sg5 : state.used[len];
-    }
-    var word, guard=0;
-    do {
-      word = pool[Math.floor(Math.random()*pool.length)];
-      guard++;
-      if (guard>10000) break;
-    } while (usedMap[word]);
-    usedMap[word] = true;
-    return word;
-  }
+  <!-- App script (keep this as a separate file) -->
+  <script src="/app.js" defer></script>
+</body>
+</html>
 
-  // -------- Locked letters --------
-  function computeLockedIdx(len, reveal) {
-    if (reveal === 'first') return [0];
-    if (reveal === 'last')  return [len-1];
-    return [];
-  }
-  function prefillLockedForRow(r) {
-    var secret = state.round.secret;
-    var lockedIdx = state.round.lockedIdx;
-    var board = state.round.board;
-    for (var i=0;i<lockedIdx.length;i++) {
-      var idx = lockedIdx[i];
-      board[r][idx].textContent = secret[idx];
-    }
-  }
-  function firstEditableCol(len, lockedIdx) {
-    var locked = {};
-    for (var i=0;i<lockedIdx.length;i++) locked[lockedIdx[i]] = true;
-    for (var c=0;c<len;c++) if (!locked[c]) return c;
-    return 0;
-  }
-  function isLocked(col) {
-    for (var i=0;i<state.round.lockedIdx.length;i++) if (state.round.lockedIdx[i]===col) return true;
-    return false;
-  }
-  function moveColForward() {
-    var len = state.settings.len;
-    var c = state.round.col;
-    do { c++; } while (c < len && isLocked(c));
-    state.round.col = Math.min(c, len);
-  }
-  function moveColBack() {
-    var c = state.round.col;
-    do { c--; } while (c > 0 && isLocked(c));
-    state.round.col = Math.max(c, 0);
-  }
 
-  // -------- Grid --------
-  function renderGrid() {
-    gridEl.innerHTML = '';
-    var len  = state.settings.len;
-    var rows = state.settings.guesses;
 
-    gridEl.style.display = 'grid';
-    gridEl.style.gap = '8px';
-    gridEl.style.justifyContent = 'center';
-
-    state.round.board = [];
-
-    for (var r=0;r<rows;r++) {
-      var row = document.createElement('div');
-      row.className = 'row';
-      row.style.display = 'grid';
-      row.style.gap = '8px';
-      row.style.gridTemplateColumns = 'repeat(' + len + ', 52px)';
-
-      var rowData = [];
-      for (var c=0;c<len;c++) {
-        var tile = document.createElement('div');
-        tile.className = 'tile';
-        tile.style.width = '52px';
-        tile.style.height = '52px';
-        tile.style.display = 'flex';
-        tile.style.alignItems = 'center';
-        tile.style.justifyContent = 'center';
-        tile.style.border = '2px solid #999';
-        tile.style.borderRadius = '8px';
-        tile.style.textTransform = 'uppercase';
-        tile.textContent = '';
-        row.appendChild(tile);
-        rowData.push(tile);
-      }
-      gridEl.appendChild(row);
-      state.round.board.push(rowData);
-    }
-  }
-
-  // -------- Keyboard (hidden) --------
-  function renderKeyboard() {
-    if (!keyboardEl) return;
-    keyboardEl.innerHTML = '';
-    keyboardEl.style.display = 'none';
-  }
-
-  // -------- Scores --------
-  function renderScores() {
-    if (!scoreRows) return;
-    var r1 = state.stats.p1, r2 = state.stats.p2;
-    var html = '<tr><td>Player 1</td><td>'+r1.total_games+'</td><td>'+r1.wins+'</td><td>'+r1.first_try_wins+'</td><td>'+r1.steals+'</td></tr>';
-    if (state.settings.mode==='two') {
-      html += '<tr><td>Player 2</td><td>'+r2.total_games+'</td><td>'+r2.wins+'</td><td>'+r2.first_try_wins+'</td><td>'+r2.steals+'</td></tr>';
-    }
-    scoreRows.innerHTML = html;
-  }
-
-  // -------- Timer (accurate, starts on first key) --------
-  function placeTimerBar() {
-    if (!timerEl.parentNode && gridEl) gridEl.insertAdjacentElement('afterend', timerEl);
-    timerEl.style.width = '100%';
-  }
-  function startTimerForRow() {
-    clearInterval(state.timerInterval);
-    state.timerRunning = true;
-    var totalMs = state.settings.timer * 1000;
-    state.deadlineTs = Date.now() + totalMs;
-    placeTimerBar();
-    state.timerInterval = setInterval(function(){
-      var remaining = Math.max(0, state.deadlineTs - Date.now());
-      timerEl.style.width = ((remaining/totalMs)*100) + '%';
-      if (remaining <= 0) {
-        clearInterval(state.timerInterval);
-        state.timerRunning = false;
-        onTimeOut();
-      }
-    }, 100);
-  }
-  function stopTimer() {
-    clearInterval(state.timerInterval);
-    state.timerRunning = false;
-  }
-  function onTimeOut() {
-    if (state.round.stage !== 'playing') return;
-    var secret = state.round.secret;
-    setMessage('⏰ Time\'s up! Word was ' + secret);
-    state.round.stage = 'lost';
-    if (nextBtn) nextBtn.hidden = false;
-  }
-
-  // -------- Round --------
-  function buildCurrentDict() {
-    state.dictCurrent = {};
-    var list = [];
-    if (state.settings.wordSet === 'singlish') {
-      list = state.singlish5;
-    } else {
-      list = state.wordsByLen[state.settings.len] || [];
-    }
-    for (var i=0;i<list.length;i++) state.dictCurrent[list[i]] = true;
-  }
-
-  function startNewRound() {
-    // Read controls safely
-    if (modeSel && modeSel.value) state.settings.mode = modeSel.value;
-
-    // Singlish toggle overrides wordSet
-    if (singlishToggle && singlishToggle.checked) {
-      state.settings.wordSet = 'singlish';
-    } else {
-      state.settings.wordSet = 'english';
-    }
-
-    if (lenSel && lenSel.value) state.settings.len = parseInt(lenSel.value, 10);
-    if (state.settings.wordSet === 'singlish') {
-      state.settings.len = 5;
-      if (lenSel) lenSel.value = '5';
-    }
-
-    if (guessesInput && guessesInput.value) {
-      var g = parseInt(guessesInput.value, 10);
-      if (isNaN(g)) g = 6;
-      state.settings.guesses = Math.max(3, Math.min(10, g));
-    }
-    if (revealSel && revealSel.value) state.settings.reveal = revealSel.value;
-
-    if (timerSel && timerSel.value) {
-      var t = parseInt(timerSel.value, 10);
-      if (!isNaN(t) && t > 0) state.settings.timer = t;
-    }
-    persist();
-
-    var len = state.settings.len;
-
-    buildCurrentDict();
-    state.round.secret    = pickSecret(state.settings.wordSet, len);
-    if (!state.round.secret) {
-      setMessage('No words loaded. Check /words files.', true);
-      return;
-    }
-
-    state.round.stage     = 'playing';
-    state.round.row       = 0;
-    state.round.lockedIdx = computeLockedIdx(len, state.settings.reveal);
-
-    renderGrid();
-    renderKeyboard();
-    renderScores();
-    setMessage('');
-    if (nextBtn) nextBtn.hidden = true;
-
-    // Pre-fill locked letters on every row (keeps column fixed)
-    for (var r=0;r<state.settings.guesses;r++) prefillLockedForRow(r);
-
-    // Cursor at first editable column
-    state.round.col = firstEditableCol(len, state.round.lockedIdx);
-
-    // Timer waits for first key
-    stopTimer();
-    placeTimerBar();
-  }
-
-  function setMessage(msg, isError) {
-    if (!messageEl) return;
-    messageEl.textContent = msg;
-    if (isError) messageEl.classList.add('error'); else messageEl.classList.remove('error');
-  }
-
-  // -------- Typing & submission (physical keyboard only) --------
-  document.addEventListener('keydown', function(e){
-    if (state.round.stage !== 'playing') return;
-    var k = e.key;
-
-    if (/^[a-zA-Z]$/.test(k)) {
-      if (!state.timerRunning) startTimerForRow();
-
-      if (isLocked(state.round.col)) moveColForward();
-      if (state.round.col >= state.settings.len) return;
-      if (isLocked(state.round.col)) return;
-
-      var ch = k.toUpperCase();
-      state.round.board[state.round.row][state.round.col].textContent = ch;
-      moveColForward();
-    }
-    else if (k === 'Backspace') {
-      if (!state.timerRunning) startTimerForRow(); // backspace can start timer too
-      moveColBack();
-      if (isLocked(state.round.col)) {
-        moveColForward(); // cannot delete locked letter
-      } else {
-        state.round.board[state.round.row][state.round.col].textContent = '';
-      }
-    }
-    else if (k === 'Enter') {
-      var tiles = mapRowWithLocks();
-      // must fill all editable spots
-      for (var i=0;i<tiles.length;i++) {
-        if (!tiles[i] && !isLocked(i)) { setMessage('Not enough letters', true); return; }
-      }
-      submitGuess(tiles.join(''));
-    }
-  });
-
-  function mapRowWithLocks() {
-    var row = state.round.row;
-    var arr = [];
-    for (var i=0;i<state.settings.len;i++) {
-      if (isLocked(i)) arr[i] = state.round.secret[i];
-      else arr[i] = state.round.board[row][i].textContent || '';
-    }
-    return arr;
-  }
-
-  // -------- Wordle colouring with duplicate handling --------
-  function colourRow(guess, secret, rowTiles) {
-    var len = guess.length;
-    var counts = {};
-    for (var i=0;i<len;i++) counts[secret[i]] = (counts[secret[i]]||0)+1;
-
-    var marks = new Array(len);
-    for (i=0;i<len;i++) marks[i] = 'absent';
-
-    // Greens
-    for (i=0;i<len;i++) {
-      if (guess[i] === secret[i]) {
-        marks[i] = 'correct';
-        counts[guess[i]] -= 1;
-      }
-    }
-    // Yellows
-    for (i=0;i<len;i++) {
-      if (marks[i] === 'correct') continue;
-      var ch = guess[i];
-      if ((counts[ch]||0) > 0) {
-        marks[i] = 'present';
-        counts[ch] -= 1;
-      }
-    }
-
-    // Paint
-    for (i=0;i<len;i++) {
-      if (marks[i] === 'correct') {
-        rowTiles[i].style.backgroundColor = '#2ECC71'; // green
-      } else if (marks[i] === 'present') {
-        rowTiles[i].style.backgroundColor = '#F4C542'; // amber
-      } else {
-        rowTiles[i].style.backgroundColor = '#9AA0A6'; // grey
-      }
-    }
-  }
-
-  // -------- Submit guess (invalid words still count) --------
-  function submitGuess(rawGuess) {
-    var guess  = (rawGuess || '').toUpperCase();
-    var secret = state.round.secret;
-    var rowTiles = state.round.board[state.round.row];
-
-    // Always colour and consume the row
-    colourRow(guess, secret, rowTiles);
-
-    if (guess === secret) {
-      setMessage('Correct!');
-      state.round.stage = 'won';
-      stopTimer();
-      if (nextBtn) nextBtn.hidden = false;
-      return;
-    }
-
-    // Next row or end
-    state.round.row += 1;
-    if (state.round.row >= state.settings.guesses) {
-      setMessage('Out of guesses! Word was ' + secret);
-      state.round.stage = 'lost';
-      stopTimer();
-      if (nextBtn) nextBtn.hidden = false;
-      return;
-    }
-
-    // Prepare next row
-    prefillLockedForRow(state.round.row);
-    state.round.col = firstEditableCol(state.settings.len, state.round.lockedIdx);
-    stopTimer(); // wait for first key on next row
-    timerEl.style.width = '100%';
-    setMessage('');
-  }
-
-  // -------- Buttons & init --------
-  if (nextBtn) nextBtn.addEventListener('click', startNewRound);
-
-  if (resetBtn) resetBtn.addEventListener('click', function(){
-    if (!confirm('Reset scores and used words?')) return;
-    state.stats = { p1:{total_games:0,wins:0,first_try_wins:0,steals:0},
-                    p2:{total_games:0,wins:0,first_try_wins:0,steals:0} };
-    state.used  = { 4:{}, 5:{}, 6:{}, sg5:{} };
-    persist();
-    renderScores();
-    setMessage('Scores reset');
-  });
-
-  function setupDarkMode() {
-    try {
-      var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
-      if (prefersLight) document.body.classList.add('light');
-      if (darkToggle) darkToggle.addEventListener('click', function(){
-        document.body.classList.toggle('light');
-      });
-    } catch (e) {}
-  }
-
-  // Init
-  loadPersisted();
-  if (modeSel)      modeSel.value = state.settings.mode;
-  if (lenSel)       lenSel.value  = String(state.settings.len);
-  if (guessesInput) guessesInput.value = String(state.settings.guesses);
-  if (revealSel)    revealSel.value = state.settings.reveal;
-  if (timerSel)     timerSel.value = String(state.settings.timer);
-  if (singlishToggle) singlishToggle.checked = (state.settings.wordSet === 'singlish');
-
-  setupDarkMode();
-  renderScores();
-  loadWords().then(startNewRound);
-})();
