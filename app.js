@@ -136,7 +136,11 @@
       rowEl.style.gap = '6px';
       rowEl.style.marginBottom = '6px';
 
+      if (i === 1) {
+        rowEl.style.paddingLeft = '20px'; // indent 2nd row
+      }
       if (i === 2) {
+        rowEl.style.paddingLeft = '40px'; // indent 3rd row
         const enter = document.createElement('button');
         enter.textContent = 'Enter';
         enter.className = 'key wide';
@@ -196,15 +200,17 @@
       timerEl.style.width = `${(state.timeLeft / total) * 100}%`;
       if (state.timeLeft <= 0) {
         clearInterval(state.timerInterval);
-        autoSkipRow();
+        timeOutEnd();
       }
     }, 1000);
   }
 
-  function autoSkipRow() {
+  function timeOutEnd() {
     if (state.round.stage !== 'playing') return;
-    const guess = state.round.board[state.round.row].map(t => t.textContent).join('');
-    submitGuess(guess || ''); // treat as blank
+    const secret = state.round.secret;
+    messageEl.textContent = `⏰ Time's up! Word was ${secret}`;
+    state.round.stage = 'lost';
+    nextBtn.hidden = false;
   }
 
   function startNewRound() {
@@ -231,7 +237,7 @@
     // Reveal first letter if option is set
     if (state.settings.reveal === 'first' && state.round.secret) {
       state.round.board[0][0].textContent = state.round.secret[0];
-      state.round.col = 1; // start typing after first letter
+      state.round.col = 1;
     }
 
     startTimer();
@@ -255,7 +261,7 @@
         if (!(state.settings.reveal === 'first' && row === 0 && state.round.col === 0)) {
           state.round.board[row][state.round.col].textContent = '';
         } else {
-          state.round.col = 1; // lock first letter
+          state.round.col = 1;
         }
       }
     } else if (key === 'Enter') {
