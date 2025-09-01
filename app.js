@@ -16,14 +16,25 @@
   const darkToggle = qs('#darkToggle');
   const scoreRows = qs('#scoreRows');
 
+  // Timer element
+  const timerEl = document.createElement('div');
+  timerEl.id = 'timerBar';
+  timerEl.style.height = '10px';
+  timerEl.style.background = '#4A90E2';
+  timerEl.style.margin = '10px auto';
+  timerEl.style.transition = 'width 1s linear';
+  timerEl.style.maxWidth = '300px';
+
   // State
   const state = {
     wordsByLen: { 4: [], 5: [], 6: [] },
     dict: new Set(),
     used: { 4: new Set(), 5: new Set(), 6: new Set() },
-    settings: { mode: 'single', len: 5, guesses: 6, reveal: 'first' },
+    settings: { mode: 'single', len: 5, guesses: 6, reveal: 'first', timer: 10 },
     round: {},
-    stats: { p1: { total_games: 0, wins: 0, first_try_wins: 0, steals: 0 }, p2: { total_games: 0, wins: 0, first_try_wins: 0, steals: 0 } }
+    stats: { p1: { total_games: 0, wins: 0, first_try_wins: 0, steals: 0 }, p2: { total_games: 0, wins: 0, first_try_wins: 0, steals: 0 } },
+    timerInterval: null,
+    timeLeft: 0
   };
 
   const STORAGE_KEY_STATS = 'lingo_stats_v1';
@@ -126,7 +137,6 @@
       rowEl.style.marginBottom = '6px';
 
       if (i === 2) {
-        // Enter before letters
         const enter = document.createElement('button');
         enter.textContent = 'Enter';
         enter.className = 'key wide';
@@ -157,7 +167,6 @@
       keyboardEl.appendChild(rowEl);
     });
 
-    // Add click events
     keyboardEl.querySelectorAll('.key').forEach(btn => {
       btn.addEventListener('click', () => handleKey(btn.dataset.key));
     });
@@ -171,6 +180,31 @@
       html += `<tr><td>Player 2</td><td>${r2.total_games}</td><td>${r2.wins}</td><td>${r2.first_try_wins}</td><td>${r2.steals}</td></tr>`;
     }
     scoreRows.innerHTML = html;
+  }
+
+  function startTimer() {
+    clearInterval(state.timerInterval);
+    state.timeLeft = state.settings.timer;
+    timerEl.style.width = '100%';
+    if (!timerEl.parentNode) {
+      gridEl.insertAdjacentElement('afterend', timerEl);
+    }
+
+    const total = state.settings.timer;
+    state.timerInterval = setInterval(() => {
+      state.timeLeft--;
+      timerEl.style.width = `${(state.timeLeft / total) * 100}%`;
+      if (state.timeLeft <= 0) {
+        clearInterval(state.timerInterval);
+        autoSkipRow();
+      }
+    }, 1000);
+  }
+
+  function autoSkipRow() {
+    if (state.round.stage !== 'playing') return;
+    const guess = state.round.board[state.round.row].map(t => t.textContent).join('');
+    submitGuess(guess || ''); // treat as blank
   }
 
   function startNewRound() {
@@ -193,6 +227,14 @@
     renderScores();
     messageEl.textContent = '';
     nextBtn.hidden = true;
+
+    // Reveal first letter if option is set
+    if (state.settings.reveal === 'first' && state.round.secret) {
+      state.round.board[0][0].textContent = state.round.secret[0];
+      state.round.col = 1; // start typing after first letter
+    }
+
+    startTimer();
   }
 
   // Typing and guesses
@@ -210,7 +252,11 @@
     } else if (key === 'Backspace') {
       if (state.round.col > 0) {
         state.round.col--;
-        state.round.board[row][state.round.col].textContent = '';
+        if (!(state.settings.reveal === 'first' && row === 0 && state.round.col === 0)) {
+          state.round.board[row][state.round.col].textContent = '';
+        } else {
+          state.round.col = 1; // lock first letter
+        }
       }
     } else if (key === 'Enter') {
       if (state.round.col === len) {
@@ -234,28 +280,32 @@
 
     for (let i = 0; i < guess.length; i++) {
       if (guess[i] === secret[i]) {
-        rowTiles[i].style.backgroundColor = '#2ECC71'; // green
+        rowTiles[i].style.backgroundColor = '#2ECC71';
       } else if (secret.includes(guess[i])) {
-        rowTiles[i].style.backgroundColor = '#F4C542'; // amber
+        rowTiles[i].style.backgroundColor = '#F4C542';
       } else {
-        rowTiles[i].style.backgroundColor = '#9AA0A6'; // grey
+        rowTiles[i].style.backgroundColor = '#9AA0A6';
       }
     }
 
     if (guess === secret) {
       messageEl.textContent = 'Correct!';
       state.round.stage = 'won';
+      clearInterval(state.timerInterval);
       nextBtn.hidden = false;
       return;
     }
 
     state.round.row++;
-    state.round.col = 0;
+    state.round.col = (state.settings.reveal === 'first' ? 1 : 0);
 
     if (state.round.row >= state.settings.guesses) {
       messageEl.textContent = `Out of guesses! Word was ${secret}`;
       state.round.stage = 'lost';
+      clearInterval(state.timerInterval);
       nextBtn.hidden = false;
+    } else {
+      startTimer();
     }
   }
 
