@@ -1,0 +1,9 @@
+[build]
+publish = "."
+functions = "netlify/functions"
+
+# Privacy headers: keep the site unindexed
+[[headers]]
+for = "/*"
+[headers.values]
+X-Robots-Tag = "noindex, nofollow"
