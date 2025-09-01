@@ -65,6 +65,7 @@
     if (state.used[len].size >= pool.length) state.used[len].clear();
     let word;
     do { word = pool[Math.floor(Math.random() * pool.length)]; } while (state.used[len].has(word));
+    state.used[len].add(word);
     return word;
   }
 
@@ -78,6 +79,7 @@
     gridEl.style.gap = '8px';
     gridEl.style.justifyContent = 'center';
 
+    state.round.board = [];
     for (let r = 0; r < rows; r++) {
       const row = document.createElement('div');
       row.className = 'row';
@@ -85,6 +87,7 @@
       row.style.gap = '8px';
       row.style.gridTemplateColumns = `repeat(${len}, 52px)`;
 
+      const rowData = [];
       for (let c = 0; c < len; c++) {
         const tile = document.createElement('div');
         tile.className = 'tile';
@@ -98,7 +101,9 @@
         tile.style.textTransform = 'uppercase';
         tile.textContent = '';
         row.appendChild(tile);
+        rowData.push(tile);
       }
+      state.round.board.push(rowData);
       gridEl.appendChild(row);
     }
   }
@@ -121,9 +126,11 @@
       rowEl.style.marginBottom = '6px';
 
       if (i === 2) {
+        // Enter button before the row
         const enter = document.createElement('button');
         enter.textContent = 'Enter';
         enter.className = 'key wide';
+        enter.dataset.key = 'Enter';
         rowEl.appendChild(enter);
       }
 
@@ -143,10 +150,16 @@
         const back = document.createElement('button');
         back.textContent = '⌫';
         back.className = 'key wide';
+        back.dataset.key = 'Backspace';
         rowEl.appendChild(back);
       }
 
       keyboardEl.appendChild(rowEl);
+    });
+
+    // Add click events
+    keyboardEl.querySelectorAll('.key').forEach(btn => {
+      btn.addEventListener('click', () => handleKey(btn.dataset.key));
     });
   }
 
@@ -169,7 +182,10 @@
 
     state.round = {
       secret: pickSecret(len),
-      stage: 'playing'
+      stage: 'playing',
+      row: 0,
+      col: 0,
+      board: []
     };
 
     renderGrid();
@@ -179,6 +195,70 @@
     nextBtn.hidden = true;
   }
 
+  // Typing and guesses
+  function handleKey(key) {
+    if (state.round.stage !== 'playing') return;
+    const len = state.settings.len;
+    const row = state.round.row;
+    const col = state.round.col;
+
+    if (/^[A-Z]$/.test(key)) {
+      if (col < len) {
+        state.round.board[row][col].textContent = key;
+        state.round.col++;
+      }
+    } else if (key === 'Backspace') {
+      if (state.round.col > 0) {
+        state.round.col--;
+        state.round.board[row][state.round.col].textContent = '';
+      }
+    } else if (key === 'Enter') {
+      if (state.round.col === len) {
+        const guess = state.round.board[row].map(t => t.textContent).join('');
+        submitGuess(guess);
+      } else {
+        messageEl.textContent = 'Not enough letters';
+      }
+    }
+  }
+
+  function submitGuess(guess) {
+    guess = guess.toUpperCase();
+    if (!state.dict.has(guess)) {
+      messageEl.textContent = 'Not in word list';
+      return;
+    }
+
+    const secret = state.round.secret;
+    const rowTiles = state.round.board[state.round.row];
+
+    for (let i = 0; i < guess.length; i++) {
+      if (guess[i] === secret[i]) {
+        rowTiles[i].style.backgroundColor = '#2ECC71'; // green
+      } else if (secret.includes(guess[i])) {
+        rowTiles[i].style.backgroundColor = '#F4C542'; // amber
+      } else {
+        rowTiles[i].style.backgroundColor = '#9AA0A6'; // grey
+      }
+    }
+
+    if (guess === secret) {
+      messageEl.textContent = 'Correct!';
+      state.round.stage = 'won';
+      nextBtn.hidden = false;
+      return;
+    }
+
+    state.round.row++;
+    state.round.col = 0;
+
+    if (state.round.row >= state.settings.guesses) {
+      messageEl.textContent = `Out of guesses! Word was ${secret}`;
+      state.round.stage = 'lost';
+      nextBtn.hidden = false;
+    }
+  }
+
   function setupDarkMode() {
     const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
     if (prefersLight) document.body.classList.add('light');
@@ -186,6 +266,7 @@
   }
 
   // Event bindings
+  document.addEventListener('keydown', e => handleKey(e.key.toUpperCase()));
   nextBtn.addEventListener('click', startNewRound);
   resetBtn.addEventListener('click', () => {
     if (!confirm('Reset scores and used words?')) return;
